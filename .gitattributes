@@ -1,0 +1,32 @@
+* text=auto eol=lf
+
+*.bat text eol=crlf
+*.cmd text eol=crlf
+*.ps1 text eol=lf
+*.sh text eol=lf
+
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.pdf binary
+*.zip binary
+*.tar binary
+*.gz binary
+
+*.parquet binary
+*.feather binary
+*.db binary
+*.sqlite binary
+*.sqlite3 binary
+*.h5 binary
+*.keras binary
+*.ckpt binary
+*.onnx binary
+*.pkl binary
+*.pickle binary
+*.joblib binary
+*.xlsx binary
+*.xls binary
+

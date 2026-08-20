@@ -1,0 +1,98 @@
+platform:
+  name: PREDAP
+  description: Modular platform for healthcare demand forecasting.
+  public_data_policy: code_docs_and_synthetic_examples_only
+
+repositories:
+  predap-platform:
+    purpose: Orchestration, Docker Compose, documentation, GitHub Pages and module contracts.
+    local_path: .
+    publishes_real_data: false
+    github_pages: true
+  predap-data-retrieval:
+    purpose: Data extraction adapters, schema validation and synthetic data generation.
+    local_path: AQUAS_DATA_RETRIEVAL-git
+    publishes_real_data: false
+    public_examples: examples/synthetic
+    github_pages: true
+  predap-cclr:
+    purpose: CCLR feature selection and diagnostic covariate generation.
+    local_path: CCLR_PREDAP
+    publishes_real_data: false
+    public_examples: examples/synthetic
+    github_pages: true
+  predap-training:
+    purpose: Transformer training, quantization and MLflow experiment tracking.
+    local_path: src
+    entrypoints:
+      - main_train.py
+      - main_train_quantization.py
+      - scripts/train_all_codes.py
+    publishes_real_data: false
+    public_examples: examples/synthetic
+    github_pages: true
+  predap-inference:
+    purpose: External model loading, reconstruction, inference and prediction exports.
+    local_path: PREDAP_INFERENCE
+    entrypoints:
+      - production/retrieve_and_reconstruct_data_pipeline.py
+    publishes_real_data: false
+    public_examples: examples/synthetic
+    github_pages: true
+  prediction-analysis:
+    purpose: Evaluate prediction outputs against observed data and write analysis tables, plots and MLflow runs.
+    local_path: prediction-analysis
+    entrypoints:
+      - python -m prediction_analysis analyze
+    publishes_real_data: false
+    public_examples: examples/synthetic
+    github_pages: false
+
+github_pages:
+  source: GitHub Actions
+  workflow: .github/workflows/docs.yml
+  canonical_docs_repo: predap-platform
+
+public_repository_files:
+  - LICENSE
+  - SECURITY.md
+  - DATA_POLICY.md
+  - CONTRIBUTING.md
+  - .gitattributes
+  - scripts/check_github_safety.ps1
+  - scripts/create_private_runtime_skeleton.ps1
+
+contracts:
+  historical_dataset:
+    required_columns:
+      - timestamp
+    target_columns: one numeric column per demand or diagnosis code
+    formats:
+      - csv
+      - parquet
+  model_bundle:
+    required_files:
+      - manifest.json
+    model_files: JSON dummy models for synthetic tests, quantized TensorFlow/Keras weights for production
+  predictions:
+    required_columns:
+      - code
+      - target_date
+      - init_forecast_date
+      - final_forecast_date
+      - forecast
+      - lookback
+      - predictions
+      - ci_lower
+      - ci_upper
+      - velocity
+      - acceleration
+  analysis:
+    required_inputs:
+      - selected_long prediction files
+      - observed actuals table with timestamp and one numeric column per target code
+    outputs:
+      - matched_predictions.parquet
+      - coverage_summary.csv
+      - metrics tables
+      - plots

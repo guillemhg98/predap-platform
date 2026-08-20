@@ -1,0 +1,18 @@
+{
+  "schema_version": "predap-dummy-model-bundle/v1",
+  "bundle_type": "synthetic_smoke_test",
+  "description": "Tiny public dummy model bundle for validating PREDAP inference contracts.",
+  "target_codes": [
+    "DEMAND__TOTAL",
+    "SERVEI_CODI__URG"
+  ],
+  "forecasts": [
+    7
+  ],
+  "lookbacks": [
+    7
+  ],
+  "model_format": "json-moving-average",
+  "contains_real_data": false
+}
+

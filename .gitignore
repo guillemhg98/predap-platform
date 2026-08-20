@@ -1,0 +1,97 @@
+# Python
+__pycache__/
+**/__pycache__/
+*.py[cod]
+.ipynb_checkpoints/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Local environments and secrets
+.env
+.env.*
+!.env.example
+.venv/
+venv/
+tf210_env/
+.tmp_docs_deps/
+tmp_docs_deps/
+.venv-docs/
+.idea/
+.vscode/
+.DS_Store
+
+# Real data, generated data and operational artifacts.
+# GitHub must only contain code, docs and explicitly synthetic fixtures.
+data/
+src/data/
+AQUAS_DATA_RETRIEVAL-git/data/
+CCLR_PREDAP/data/
+private_runtime/
+runtime/
+mlruns/
+outputs/
+plots/
+logs/
+models/
+plots_residual_transformers/
+post_processing/paper_functions/taules_finals_paper/
+distilled_models/
+production_predictions/
+hydra_production_predictions/
+multirun/
+best_hyperparameters_results/
+
+# Model and tabular artifacts
+*.h5
+*.keras
+*.ckpt
+*.onnx
+*.joblib
+*.pkl
+*.pickle
+*.pt
+*.pth
+*.pb
+*.tflite
+*.npy
+*.npz
+*.rds
+*.sqlite
+*.sqlite3
+*.parquet
+*.csv
+*.feather
+*.xlsx
+*.xls
+*.db
+*.pem
+*.key
+*.p12
+*.pfx
+*.crt
+*.cer
+mlflow.db
+mlflow.db*
+
+# Archives and local exports
+*.tar
+*.tar.gz
+*.zip
+my_project_image1.tar
+dist/
+
+# Generated documentation
+site/
+CCLR_PREDAP/site/
+
+# Legacy/local duplicate inference tree. PREDAP_INFERENCE is the canonical
+# public inference module used by exports.
+Inference/
+
+# Keep synthetic examples publishable.
+!examples/
+!examples/synthetic/
+!examples/synthetic/**

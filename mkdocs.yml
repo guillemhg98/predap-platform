@@ -1,0 +1,145 @@
+site_name: PREDAP Platform
+site_description: >-
+  Modular healthcare demand forecasting platform with data retrieval, CCLR
+  feature selection, Transformer training and production inference.
+site_author: PREDAP Engineering Team
+repo_url: https://github.com/guillemhg98/predap-platform
+copyright: Copyright &copy; 2024-2026 PREDAP Team
+
+theme:
+  name: material
+  font:
+    text: Source Sans 3
+    code: JetBrains Mono
+  features:
+    - navigation.tabs
+    - navigation.tabs.sticky
+    - navigation.sections
+    - navigation.indexes
+    - navigation.top
+    - navigation.expand
+    - search.suggest
+    - search.highlight
+    - content.code.copy
+    - content.code.annotate
+    - content.tabs.link
+  palette:
+    - scheme: default
+      primary: blue
+      accent: orange
+  icon:
+    repo: fontawesome/brands/github
+
+markdown_extensions:
+  - attr_list
+  - md_in_html
+  - admonition
+  - def_list
+  - footnotes
+  - tables
+  - toc:
+      permalink: true
+      toc_depth: 3
+  - pymdownx.highlight:
+      anchor_linenums: true
+      line_spans: __span
+  - pymdownx.inlinehilite
+  - pymdownx.snippets
+  - pymdownx.superfences:
+      custom_fences:
+        - name: mermaid
+          class: mermaid
+          format: !!python/name:pymdownx.superfences.fence_code_format
+  - pymdownx.arithmatex:
+      generic: true
+  - pymdownx.details
+  - pymdownx.tabbed:
+      alternate_style: true
+  - pymdownx.tasklist:
+      custom_checkbox: true
+  - pymdownx.keys
+  - pymdownx.mark
+
+plugins:
+  - search
+  - mermaid2
+  - mkdocstrings:
+      handlers:
+        python:
+          paths: [src]
+          options:
+            docstring_style: google
+            show_root_heading: true
+            show_source: true
+            members_order: source
+            show_signature_annotations: true
+  - mkdocs-jupyter:
+      include_source: true
+      ignore_h1_titles: true
+
+extra_javascript:
+  - javascripts/mathjax.js
+  - https://polyfill.io/v3/polyfill.min.js?features=es6
+  - https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js
+  - https://unpkg.com/mermaid/dist/mermaid.min.js
+
+extra_css:
+  - stylesheets/rumia-brand.css
+
+extra:
+  social:
+    - icon: fontawesome/brands/github
+      link: https://github.com/guillemhg98/predap-platform
+
+nav:
+  - Overview: index.md
+  - Platform:
+      - Project Overview: index.md
+      - Repository Strategy: platform/repository-strategy.md
+      - Data Policy: platform/data-policy.md
+      - License and Permitted Use: platform/license-and-use.md
+      - Contact and Support: platform/contact-support.md
+      - Module Contracts: platform/module-contracts.md
+      - Standalone Repositories: platform/standalone-repos.md
+      - Private Runtime Setup: platform/private-runtime-setup.md
+      - Toy vs Real Integration: platform/toy-vs-real-map.md
+      - Submodules: platform/submodules.md
+  - Getting Started:
+      - Installation: getting-started/installation.md
+      - 5-Minute Quickstart: getting-started/quickstart.md
+  - User Guide:
+      - Data Preprocessing: user-guide/data-preprocessing.md
+      - Model Training: user-guide/model-training.md
+      - Evaluation & Metrics: user-guide/evaluation.md
+      - Configuration Reference: user-guide/configuration.md
+  - API Reference:
+      - Python Core Library:
+          - Univariate Transformer: api-reference/python/univariate-transformer.md
+          - Residual Transformers: api-reference/python/residual-transformers.md
+          - Training Pipelines: api-reference/python/training-pipelines.md
+          - Data Preparation: api-reference/python/data-preparation.md
+          - Utilities: api-reference/python/utils.md
+      - REST API (FastAPI): api-reference/rest-api.md
+      - Pydantic Models: api-reference/pydantic-models.md
+      - External API Report: api-reference/external-api-report.md
+  - Tutorials:
+      - Practical Runbook: tutorials/practical-runbook.md
+      - Full Platform Workflow: tutorials/full-platform-workflow.md
+      - GitHub to Production Check: tutorials/github-to-production-check.md
+      - Toy Data Workflow: tutorials/toy-data-workflow.md
+      - Real Data Private Workflow: tutorials/real-data-private-workflow.md
+      - Real Retrieval to Prediction: tutorials/real-retrieval-to-prediction.md
+      - Synthetic End-to-End: tutorials/synthetic-end-to-end.md
+      - External Model Inference: tutorials/external-model-inference.md
+      - Training Your First Model: tutorials/train-custom-model.md
+      - Grid Search & Hyperparameter Tuning: tutorials/grid-search.md
+      - Hydra Experiment Runner: tutorials/hydra-experiments.md
+  - Deployment:
+      - GitHub Pages: deployment/github-pages.md
+      - Production Pipelines: deployment/production-pipelines.md
+      - Docker Containers: deployment/docker.md
+      - Model Quantization: deployment/quantization.md
+  - Development:
+      - Contributing: development/contributing.md
+      - Testing: development/testing.md
+      - Roadmap: development/roadmap.md

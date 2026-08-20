@@ -1,0 +1,354 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    ports:
+      - "127.0.0.1:${POSTGRES_HOST_PORT}:5432"
+    volumes:
+      - ${HOST_RUNTIME_DIR}/postgres:/var/lib/postgresql/data
+
+  mlflow:
+    build:
+      context: .
+      dockerfile: dockerfile
+    image: predap-transformers:latest
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    command:
+      - mlflow
+      - server
+      - --backend-store-uri
+      - ${MLFLOW_BACKEND_STORE_URI}
+      - --default-artifact-root
+      - ${MLFLOW_ARTIFACT_ROOT}
+      - --host
+      - 0.0.0.0
+      - --port
+      - "5000"
+    ports:
+      - "127.0.0.1:${MLFLOW_HOST_PORT}:5000"
+    volumes:
+      - ${HOST_RUNTIME_DIR}/mlflow:/mlflow
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes"]
+    ports:
+      - "127.0.0.1:6379:6379"
+    volumes:
+      - ${HOST_RUNTIME_DIR}/redis:/data
+    profiles: ["api"]
+
+  api:
+    image: predap-transformers:latest
+    build:
+      context: .
+      dockerfile: dockerfile
+    restart: unless-stopped
+    depends_on:
+      - redis
+    command: ["uvicorn", "api.main:app", "--host", "0.0.0.0", "--port", "8000"]
+    environment:
+      PYTHONPATH: /app:/app/src
+      REDIS_URL: redis://redis:6379/0
+      JOB_TTL_SECONDS: ${JOB_TTL_SECONDS}
+    ports:
+      - "127.0.0.1:8000:8000"
+    volumes:
+      - .:/app
+      - ${HOST_BEST_FEATURES_DIR}:/app/runtime/best_features
+      - ${HOST_QUANTIZED_MODELS_DIR}:/quantized_models
+      - ${HOST_PRODUCTION_PREDICTIONS_DIR}:/production_predictions
+    profiles: ["api"]
+
+  train-one:
+    image: predap-transformers:latest
+    build:
+      context: .
+      dockerfile: dockerfile
+    depends_on:
+      - mlflow
+    working_dir: /app
+    gpus: all
+    environment:
+      PYTHONPATH: /app:/app/src
+      MPLBACKEND: Agg
+      TF_FORCE_GPU_ALLOW_GROWTH: "true"
+      NVIDIA_VISIBLE_DEVICES: all
+      NVIDIA_DRIVER_CAPABILITIES: compute,utility
+      CCLR_REPO_PATH: ${CCLR_REPO_PATH:-/app/predap-cclr}
+    command:
+      - bash
+      - -lc
+      - |
+        set -euo pipefail
+        TRAIN_DATA_PATH_NORM="$${TRAIN_DATA_PATH:-private_runtime/data/historical_daily.parquet}"
+        TRAIN_DATA_PATH_NORM="$${TRAIN_DATA_PATH_NORM//\\//}"
+        TRAIN_ALL_CODES_PATH_NORM="$${TRAIN_ALL_CODES_PATH:-private_runtime/data/target_codes_models_columns_order.json}"
+        TRAIN_ALL_CODES_PATH_NORM="$${TRAIN_ALL_CODES_PATH_NORM//\\//}"
+        TRAIN_BEST_FEATURES_PREFIX_NORM="$${TRAIN_BEST_FEATURES_PREFIX:-runtime/best_features/BEST_features_NOSMOOTH_}"
+        TRAIN_BEST_FEATURES_PREFIX_NORM="$${TRAIN_BEST_FEATURES_PREFIX_NORM//\\//}"
+        until python -c "import urllib.request; urllib.request.urlopen('$${MLFLOW_TRACKING_URI}/health', timeout=2)" 2>/dev/null; do
+          echo "Waiting for MLflow at $${MLFLOW_TRACKING_URI}..."
+          sleep 2
+        done
+        python scripts/preflight_training.py \
+          --data-path "$${TRAIN_DATA_PATH_NORM}" \
+          --codes-path "$${TRAIN_ALL_CODES_PATH_NORM}" \
+          --target-code "$${TRAIN_TARGET_CODE}" \
+          --best-features-prefix "$${TRAIN_BEST_FEATURES_PREFIX_NORM}" \
+          $${TRAIN_REQUIRE_GPU_FLAG:-}
+        python main_train_quantization.py \
+          model.target_code="$${TRAIN_TARGET_CODE}" \
+          experiment_setup="'$${TRAIN_EXPERIMENT_SETUP}'" \
+          mlflow.tracking_uri="$${MLFLOW_TRACKING_URI}" \
+          data.data_path="$${TRAIN_DATA_PATH_NORM}" \
+          data.codes_path="$${TRAIN_ALL_CODES_PATH_NORM}" \
+          data.diagnostic_covariates_path="$${TRAIN_BEST_FEATURES_PREFIX_NORM}"
+    volumes:
+      - .:/app
+      - ${HOST_DATA_DIR:-./private_runtime/data}:/app/private_runtime/data
+      - ${HOST_BEST_FEATURES_DIR}:/app/runtime/best_features
+      - ${HOST_QUANTIZED_MODELS_DIR}:/quantized_models
+      - ${HOST_MODELS_PARAMETERS_DIR}:/models_parameters
+      - ${HOST_TRANSFORMER_OUTPUTS_DIR}:/transformer_outputs
+      - ${HOST_HISTORY_DIR}:/history
+      - ${HOST_RESULTS_DIR:-./private_runtime/results}:/app/runtime/results
+      - ${HOST_RUNTIME_DIR}/mlflow:/mlflow
+      - ${HOST_CCLR_REPO_DIR:-./predap-cclr}:/app/predap-cclr:ro
+    profiles: ["train"]
+
+  train-sweep:
+    image: predap-transformers:latest
+    build:
+      context: .
+      dockerfile: dockerfile
+    depends_on:
+      - mlflow
+    working_dir: /app
+    gpus: all
+    environment:
+      PYTHONPATH: /app:/app/src
+      MPLBACKEND: Agg
+      TF_FORCE_GPU_ALLOW_GROWTH: "true"
+      NVIDIA_VISIBLE_DEVICES: all
+      NVIDIA_DRIVER_CAPABILITIES: compute,utility
+      CCLR_REPO_PATH: ${CCLR_REPO_PATH:-/app/predap-cclr}
+    command:
+      - bash
+      - -lc
+      - |
+        set -euo pipefail
+        TRAIN_DATA_PATH_NORM="$${TRAIN_DATA_PATH:-private_runtime/data/historical_daily.parquet}"
+        TRAIN_DATA_PATH_NORM="$${TRAIN_DATA_PATH_NORM//\\//}"
+        TRAIN_ALL_CODES_PATH_NORM="$${TRAIN_ALL_CODES_PATH:-private_runtime/data/target_codes_models_columns_order.json}"
+        TRAIN_ALL_CODES_PATH_NORM="$${TRAIN_ALL_CODES_PATH_NORM//\\//}"
+        TRAIN_BEST_FEATURES_PREFIX_NORM="$${TRAIN_BEST_FEATURES_PREFIX:-runtime/best_features/BEST_features_NOSMOOTH_}"
+        TRAIN_BEST_FEATURES_PREFIX_NORM="$${TRAIN_BEST_FEATURES_PREFIX_NORM//\\//}"
+        until python -c "import urllib.request; urllib.request.urlopen('$${MLFLOW_TRACKING_URI}/health', timeout=2)" 2>/dev/null; do
+          echo "Waiting for MLflow at $${MLFLOW_TRACKING_URI}..."
+          sleep 2
+        done
+        python scripts/preflight_training.py \
+          --data-path "$${TRAIN_DATA_PATH_NORM}" \
+          --codes-path "$${TRAIN_ALL_CODES_PATH_NORM}" \
+          --best-features-prefix "$${TRAIN_BEST_FEATURES_PREFIX_NORM}" \
+          $${TRAIN_REQUIRE_GPU_FLAG:-}
+        python main_train_quantization.py -m \
+          mlflow.tracking_uri="$${MLFLOW_TRACKING_URI}" \
+          data.data_path="$${TRAIN_DATA_PATH_NORM}" \
+          data.codes_path="$${TRAIN_ALL_CODES_PATH_NORM}" \
+          data.diagnostic_covariates_path="$${TRAIN_BEST_FEATURES_PREFIX_NORM}"
+    volumes:
+      - .:/app
+      - ${HOST_DATA_DIR:-./private_runtime/data}:/app/private_runtime/data
+      - ${HOST_BEST_FEATURES_DIR}:/app/runtime/best_features
+      - ${HOST_QUANTIZED_MODELS_DIR}:/quantized_models
+      - ${HOST_MODELS_PARAMETERS_DIR}:/models_parameters
+      - ${HOST_TRANSFORMER_OUTPUTS_DIR}:/transformer_outputs
+      - ${HOST_HISTORY_DIR}:/history
+      - ${HOST_RESULTS_DIR:-./private_runtime/results}:/app/runtime/results
+      - ${HOST_RUNTIME_DIR}/mlflow:/mlflow
+      - ${HOST_CCLR_REPO_DIR:-./predap-cclr}:/app/predap-cclr:ro
+    profiles: ["sweep"]
+
+  train-all:
+    image: predap-transformers:latest
+    build:
+      context: .
+      dockerfile: dockerfile
+    depends_on:
+      - mlflow
+    working_dir: /app
+    gpus: all
+    environment:
+      PYTHONPATH: /app:/app/src
+      MPLBACKEND: Agg
+      TF_FORCE_GPU_ALLOW_GROWTH: "true"
+      NVIDIA_VISIBLE_DEVICES: all
+      NVIDIA_DRIVER_CAPABILITIES: compute,utility
+      MLFLOW_TRACKING_URI: ${MLFLOW_TRACKING_URI}
+      TRAIN_EXPERIMENT_SETUP: ${TRAIN_EXPERIMENT_SETUP}
+      TRAIN_ALL_EXPERIMENT_SETUPS: ${TRAIN_ALL_EXPERIMENT_SETUPS}
+      TRAIN_DATA_PATH: ${TRAIN_DATA_PATH:-private_runtime/data/historical_daily.parquet}
+      TRAIN_ALL_CODES_PATH: ${TRAIN_ALL_CODES_PATH:-private_runtime/data/target_codes_models_columns_order.json}
+      TRAIN_BEST_FEATURES_PREFIX: ${TRAIN_BEST_FEATURES_PREFIX:-runtime/best_features/BEST_features_NOSMOOTH_}
+      TRAIN_ALL_MODELS_DIR: ${TRAIN_ALL_MODELS_DIR:-../quantized_models}
+      TRAIN_ALL_LOGS_DIR: ${TRAIN_ALL_LOGS_DIR}
+      TRAIN_ALL_STATUS_DIR: ${TRAIN_ALL_STATUS_DIR}
+      TRAIN_ALL_START_AT: ${TRAIN_ALL_START_AT:-}
+      TRAIN_ALL_LIMIT: ${TRAIN_ALL_LIMIT:-0}
+      CCLR_REPO_PATH: ${CCLR_REPO_PATH:-/app/predap-cclr}
+    command:
+      - bash
+      - -lc
+      - |
+        set -euo pipefail
+        TRAIN_DATA_PATH_NORM="$${TRAIN_DATA_PATH:-private_runtime/data/historical_daily.parquet}"
+        TRAIN_DATA_PATH_NORM="$${TRAIN_DATA_PATH_NORM//\\//}"
+        TRAIN_ALL_CODES_PATH_NORM="$${TRAIN_ALL_CODES_PATH:-private_runtime/data/target_codes_models_columns_order.json}"
+        TRAIN_ALL_CODES_PATH_NORM="$${TRAIN_ALL_CODES_PATH_NORM//\\//}"
+        TRAIN_BEST_FEATURES_PREFIX_NORM="$${TRAIN_BEST_FEATURES_PREFIX:-runtime/best_features/BEST_features_NOSMOOTH_}"
+        TRAIN_BEST_FEATURES_PREFIX_NORM="$${TRAIN_BEST_FEATURES_PREFIX_NORM//\\//}"
+        export TRAIN_DATA_PATH="$${TRAIN_DATA_PATH_NORM}"
+        export TRAIN_ALL_CODES_PATH="$${TRAIN_ALL_CODES_PATH_NORM}"
+        export TRAIN_BEST_FEATURES_PREFIX="$${TRAIN_BEST_FEATURES_PREFIX_NORM}"
+        until python -c "import urllib.request; urllib.request.urlopen('$${MLFLOW_TRACKING_URI}/health', timeout=2)" 2>/dev/null; do
+          echo "Waiting for MLflow at $${MLFLOW_TRACKING_URI}..."
+          sleep 2
+        done
+        python scripts/preflight_training.py \
+          --data-path "$${TRAIN_DATA_PATH_NORM}" \
+          --codes-path "$${TRAIN_ALL_CODES_PATH_NORM}" \
+          --best-features-prefix "$${TRAIN_BEST_FEATURES_PREFIX_NORM}" \
+          $${TRAIN_REQUIRE_GPU_FLAG:-}
+        python scripts/train_all_codes.py
+    volumes:
+      - .:/app
+      - ${HOST_DATA_DIR:-./private_runtime/data}:/app/private_runtime/data
+      - ${HOST_BEST_FEATURES_DIR}:/app/runtime/best_features
+      - ${HOST_QUANTIZED_MODELS_DIR}:/quantized_models
+      - ${HOST_MODELS_PARAMETERS_DIR}:/models_parameters
+      - ${HOST_TRANSFORMER_OUTPUTS_DIR}:/transformer_outputs
+      - ${HOST_HISTORY_DIR}:/history
+      - ${HOST_RESULTS_DIR:-./private_runtime/results}:/app/runtime/results
+      - ${HOST_RUNTIME_DIR}/mlflow:/mlflow
+      - ${HOST_CCLR_REPO_DIR:-./predap-cclr}:/app/predap-cclr:ro
+    profiles: ["all"]
+
+  mlflow-import:
+    image: predap-transformers:latest
+    build:
+      context: .
+      dockerfile: dockerfile
+    depends_on:
+      - mlflow
+    working_dir: /app
+    environment:
+      PYTHONPATH: /app:/app/src
+      MLFLOW_TRACKING_URI: ${MLFLOW_TRACKING_URI}
+      IMPORT_MODEL_CODE: ${IMPORT_MODEL_CODE:-DEMAND__TOTAL}
+      IMPORT_EXPERIMENT_NAME: ${IMPORT_EXPERIMENT_NAME:-PREDAP_Recovered_Artifacts}
+      IMPORT_SOURCE_LABEL: ${IMPORT_SOURCE_LABEL:-recovered_private_runtime}
+    command:
+      - python
+      - scripts/import_recovered_models_to_mlflow.py
+    volumes:
+      - .:/app
+      - ${HOST_BEST_FEATURES_DIR}:/app/runtime/best_features
+      - ${HOST_QUANTIZED_MODELS_DIR}:/quantized_models
+      - ${HOST_MODELS_PARAMETERS_DIR}:/models_parameters
+      - ${HOST_TRANSFORMER_OUTPUTS_DIR}:/transformer_outputs
+      - ${HOST_HISTORY_DIR}:/history
+      - ${HOST_RUNTIME_DIR}/mlflow:/mlflow
+    profiles: ["mlflow-import"]
+
+  mlflow-inference-log:
+    image: predap-transformers:latest
+    build:
+      context: .
+      dockerfile: dockerfile
+    depends_on:
+      - mlflow
+    working_dir: /app
+    environment:
+      PYTHONPATH: /app:/app/src
+      MLFLOW_TRACKING_URI: ${MLFLOW_TRACKING_URI}
+      INFERENCE_EXPERIMENT_NAME: ${INFERENCE_EXPERIMENT_NAME:-PREDAP_Inference_Outputs}
+      INFERENCE_OUTPUT_ROOT: /production_predictions
+      INFERENCE_OUTPUT_PREFIX: ${INFERENCE_OUTPUT_PREFIX:-real/final_output_predictions}
+      INFERENCE_PREDICTION_ORIGIN_DATE: ${INFERENCE_PREDICTION_ORIGIN_DATE:-}
+      INFERENCE_METRICS_PATH: ${INFERENCE_METRICS_PATH:-}
+    command:
+      - python
+      - scripts/log_inference_outputs_to_mlflow.py
+    volumes:
+      - .:/app
+      - ${HOST_PRODUCTION_PREDICTIONS_DIR}:/production_predictions
+      - ${HOST_RUNTIME_DIR}/mlflow:/mlflow
+    profiles: ["mlflow-inference"]
+
+  daily-inference:
+    image: predap-transformers:latest
+    build:
+      context: .
+      dockerfile: dockerfile
+    depends_on:
+      - mlflow
+    working_dir: /app
+    environment:
+      PYTHONPATH: /app/PREDAP_INFERENCE:/app:/app/src
+      MPLBACKEND: Agg
+      MLFLOW_TRACKING_URI: ${MLFLOW_TRACKING_URI}
+      DAILY_INFERENCE_INPUT_PATH: ${DAILY_INFERENCE_INPUT_PATH:-/app/private_runtime/data/inference_daily.parquet}
+      DAILY_INFERENCE_OLD_INPUT_PATH: ${DAILY_INFERENCE_OLD_INPUT_PATH:-/app/private_runtime/data/historical_daily.csv}
+      DAILY_INFERENCE_MODEL_FOLDER: ${DAILY_INFERENCE_MODEL_FOLDER:-/quantized_models}
+      DAILY_INFERENCE_PREDICTIONS_ROOT: ${DAILY_INFERENCE_PREDICTIONS_ROOT:-/production_predictions}
+      DAILY_INFERENCE_OUTPUT_SUBDIR: ${DAILY_INFERENCE_OUTPUT_SUBDIR:-real/daily}
+      DAILY_INFERENCE_METRICS_DF_PATH: ${DAILY_INFERENCE_METRICS_DF_PATH:-/production_predictions/real/daily/production_evaluation_metrics.parquet}
+      DAILY_INFERENCE_DIAGNOSTIC_COVARIATES_PATH: ${DAILY_INFERENCE_DIAGNOSTIC_COVARIATES_PATH:-/app/runtime/best_features/BEST_features_NOSMOOTH_}
+      DAILY_INFERENCE_MODEL_SELECTION_METRICS_DIR: ${DAILY_INFERENCE_MODEL_SELECTION_METRICS_DIR:-/app/runtime/results}
+      DAILY_INFERENCE_LOOKBACK_LIST: ${DAILY_INFERENCE_LOOKBACK_LIST:-7,14,60,60,182,182}
+      DAILY_INFERENCE_FORECAST_LIST: ${DAILY_INFERENCE_FORECAST_LIST:-7,14,30,60,182,365}
+      DAILY_INFERENCE_CODES: ${DAILY_INFERENCE_CODES:-}
+      DAILY_INFERENCE_CODES_FILE: ${DAILY_INFERENCE_CODES_FILE:-}
+      DAILY_INFERENCE_START_DATE: ${DAILY_INFERENCE_START_DATE:-}
+      DAILY_INFERENCE_END_DATE: ${DAILY_INFERENCE_END_DATE:-}
+      DAILY_INFERENCE_DAYS: ${DAILY_INFERENCE_DAYS:-7}
+      DAILY_INFERENCE_WORKERS: ${DAILY_INFERENCE_WORKERS:-1}
+      DAILY_INFERENCE_CODES_PER_WORKER: ${DAILY_INFERENCE_CODES_PER_WORKER:-0}
+      DAILY_INFERENCE_KEEP_SHARDS: ${DAILY_INFERENCE_KEEP_SHARDS:-0}
+      DAILY_INFERENCE_TF_INTRA_OP_THREADS: ${DAILY_INFERENCE_TF_INTRA_OP_THREADS:-}
+      DAILY_INFERENCE_TF_INTER_OP_THREADS: ${DAILY_INFERENCE_TF_INTER_OP_THREADS:-}
+      DAILY_INFERENCE_BATCH_LABEL: ${DAILY_INFERENCE_BATCH_LABEL:-}
+      DAILY_INFERENCE_EXPERIMENT_NAME: ${DAILY_INFERENCE_EXPERIMENT_NAME:-PREDAP_Inference_Outputs}
+    command:
+      - bash
+      - -lc
+      - |
+        until python -c "import urllib.request; urllib.request.urlopen('${MLFLOW_TRACKING_URI}/health', timeout=2)" 2>/dev/null; do
+          echo "Waiting for MLflow at ${MLFLOW_TRACKING_URI}..."
+          sleep 2
+        done
+        python scripts/run_daily_inference_to_mlflow.py
+    volumes:
+      - .:/app
+      - ${HOST_DATA_DIR:-./private_runtime/data}:/app/private_runtime/data
+      - ${HOST_BEST_FEATURES_DIR}:/app/runtime/best_features
+      - ${HOST_QUANTIZED_MODELS_DIR}:/quantized_models
+      - ${HOST_RESULTS_DIR:-./private_runtime/results}:/app/runtime/results
+      - ${HOST_PRODUCTION_PREDICTIONS_DIR}:/production_predictions
+      - ${HOST_RUNTIME_DIR}/mlflow:/mlflow
+    profiles: ["daily-inference"]

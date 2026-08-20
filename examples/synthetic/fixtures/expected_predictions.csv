@@ -1,0 +1,4 @@
+code,target_date,init_forecast_date,final_forecast_date,forecast,lookback,predictions,ci_lower,ci_upper,velocity,acceleration
+DEMAND__TOTAL,2024-01-15,2024-01-14,2024-01-21,7,7,111.86,104.02,119.70,0.43,0.00
+SERVEI_CODI__URG,2024-01-15,2024-01-14,2024-01-21,7,7,40.29,36.37,44.21,0.14,0.00
+

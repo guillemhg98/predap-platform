@@ -1,0 +1,28 @@
+site_name: PREDAP Training
+site_description: Transformer training and quantization module for PREDAP.
+site_author: PREDAP Engineering Team
+repo_url: https://github.com/guillemhg98/predap-training
+
+theme:
+  name: material
+  features:
+    - navigation.sections
+    - navigation.top
+    - search.highlight
+    - content.code.copy
+
+markdown_extensions:
+  - admonition
+  - tables
+  - toc:
+      permalink: true
+  - pymdownx.superfences
+  - pymdownx.details
+
+plugins:
+  - search
+
+nav:
+  - Overview: index.md
+  - Training Workflow: training-workflow.md
+  - Data Policy: data-policy.md

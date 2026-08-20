@@ -1,0 +1,32 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  synthetic-smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Check GitHub publish safety
+        shell: pwsh
+        run: ./scripts/check_github_safety.ps1 -Path .
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Run synthetic workflow
+        run: python examples/synthetic/predap_synthetic_workflow.py --output-dir runtime/synthetic_demo
+
+      - name: Validate synthetic outputs
+        run: python scripts/validate_synthetic_outputs.py --output-dir runtime/synthetic_demo
+
+      - name: Compile public Python files
+        run: python -m py_compile examples/synthetic/predap_synthetic_workflow.py scripts/validate_synthetic_outputs.py scripts/check_private_runtime_contract.py scripts/log_inference_outputs_to_mlflow.py scripts/run_daily_inference_to_mlflow.py
